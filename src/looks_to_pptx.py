@@ -51,10 +51,10 @@ def looks_to_pptx(looks, prs, slide_layout, powerpoint_template, target_space):
         # gets the shapes object from the most recent slide and adds the Look as a png with the specific spacing [Cm(5.4), Cm(4.95), width=Cm(23)]
         if ending_slide == 0:
             shapes = prs.slides[idx].shapes
-            shapes.add_picture(tmpFile, Cm(5.4), Cm(4.95), width=Cm(23))
+            shapes.add_picture(tmpFile, Cm(2.4), Cm(2.95), width=Cm(20))
         else:
             shapes = prs.slides[ending_slide+idx].shapes
-            shapes.add_picture(tmpFile, Cm(5.4), Cm(4.95), width=Cm(23))
+            shapes.add_picture(tmpFile, Cm(2.4), Cm(2.95), width=Cm(20))
     
     # writes powerpoint with the original powerpoint template file name and includes a tag for looker generated and the target space 
     base = os.path.basename(powerpoint_template)
@@ -78,11 +78,9 @@ def main():
     powerpoint_template = sys.argv[2] if len(sys.argv) >= 2 else None
 
     if not target_space or not template_slide or not powerpoint_template:
-        print(f"Please provide: <targetSpace> <pptxTemplate> [<templateSlide>]")
+        print(f"Please provide: <targetSpace> <pptxTemplate> <templateSlide>")
         pass
 
-    # do we need this call???
-    space = sdk.space(target_space)
 
     looks = sdk.space_looks(target_space)
 
