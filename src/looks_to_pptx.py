@@ -1,118 +1,94 @@
-# imports modules
-from looker_sdk import client, models, error
-from pptx import Presentation
+# import modules
+import sys
+import os
 import io
 
+from looker_sdk import client, models, error
+from pptx import Presentation
+from pptx.util import Cm
+
+
 # client calls will now automatically authenticate using the
-# api3credentials specified in 'looker.ini'
+# api3credentials specified in 'looker.ini' which is then added to .gitginore
 sdk = client.setup("../looker.ini")
-looker_api_user = sdk.me()
-
-print(looker_api_user)
 
 
-# the space containing the set of Looks
-target_space = 1748
-
-# the powerpoint template used to create the presentation
-powerpoint_template = '../looker_template.pptx'
-
-
-
-def get_space(space):
-    """IN an integer of the space id"""
-    """OUT default json of space meta data"""
-    return sdk.space(space)
-
-def get_looks(space):
-    """IN an integer of the space id"""
-    """OUT default: json of all looks"""
-    return sdk.space_looks(target_space)
-
-space = get_space(target_space)
-looks = get_looks(target_space)
+def get_pres_temp_layout(pptx_tmp_path):
+    """Create a powerpoint presentation object from a pptx template"""
+    try:
+        prs = Presentation(pptx_tmp_path)
+    except:
+        print(f'Cannot locate \'{pptx_tmp_path}\'. Please check the path to the desired .pptx template.')
+    
+    for idx, layout in enumerate(prs.slide_layouts):
+        print(idx, layout.name)
+    return prs
 
 
-
-        
-def get_number_of_slides(slides):
-    """IN pptx presentation slides object"""
-    """OUT number of slides"""
+def cnt_slides(prs):
+    """Returns the total amount of slides, used to locate the ending slide from where the additional slides will be added"""
     cnt = 0
-    for slide in slides:
+    for slide in prs.slides:
         cnt += 1
     return cnt
-        
-        
-powerpoint_template = '../presentation_template.pptx'
-
-def get_pres_temp_layout(pptx_temp_path):
-    """IN str path to powerpoint template .pptx"""
-    """OUT prints out the different layout types then returns powerpoint presentation object"""
-    pptx = Presentation(pptx_temp_path)
-    for idx, layout in enumerate(pptx.slide_layouts):
-        print(idx, layout.name)
-    return pptx
-
-pptx = get_pres_temp_layout(powerpoint_template)
-
-title_only_slide = pptx.slide_layouts[5]
-
-def get_look_result(look_id, result_format='png'):
-    """IN look's id and the result format; default set to 'png' """
-    """OUT result object; default to a 'png' image which returns a bytes"""
-    return sdk.run_look(look_id, result_format)
-
-look_request_test = {
-        "look_id": looks[0].id, 
-        "result_format": 'png', 
-        "image_width": 960, 
-        "image_height": 540
-        }
-
-img = get_look_result(looks[0].id)
-print(img)
-
-print(looks[0].id)
-shapes = pptx.slides[0].shapes
-print(shapes)
-
-# handles converting image bytes string into temp file that isn't written to disk and is constructed as an in-memory binary stream
-tmpFile = io.BytesIO(img)
-
-shapes.add_picture(tmpFile, look_request_test['image_width'], look_request_test['image_height'] )
-
-# print(pic)
 
 
-pptx.save('../out_pres_ex.pptx')
-
-
-
-
-
-def looks_to_ppt(looks, pptx_temp_path, pptx_output_path):
-    """IN json response of all looks in a space | str of powerpoint path | str of desired output path"""
-    """OUT creates a pptx presentation with a Look png per slide"""
+def looks_to_pptx(looks, prs, slide_layout, powerpoint_template, target_space):
+    """Creates slides at the end of the powerpoint presentation and adds Looks from the specified target space"""
+    ending_slide = cnt_slides(prs)
     
-    pptx = get_pres_temp_layout(pptx_temp_path)
-
     for idx, look in enumerate(looks):
-        print(idx, look.id, look.title)
+        print(idx, look.id, look.title, ' - Look Added')
 
-        look_request = {
-        "look_id": look.id, 
-        "result_format": 'png', 
-        "image_width": 960, 
-        "image_height": 540
-        }
+        # looker's python sdk returns the requested png as an image byte stream for performant rendering results
+        look_img_byte_string = sdk.run_look(look.id, 'png')
+        # handles the look's image byte string and converts it into a temporary in-memory file
+        tmpFile = io.BytesIO(look_img_byte_string)
 
-        shapes = pptx.slides[idx].shapes
+        # adds slide to the end of the presentation with the specified slide layout - this should be a "Title Only" layout
+        prs.slides.add_slide(prs.slide_layouts[slide_layout])
 
-        shapes.add_picture(get_look_result(look_request))
+        # gets the shapes object from the most recent slide and adds the Look as a png with the specific spacing [Cm(5.4), Cm(4.95), width=Cm(23)]
+        if ending_slide == 0:
+            shapes = prs.slides[idx].shapes
+            shapes.add_picture(tmpFile, Cm(5.4), Cm(4.95), width=Cm(23))
+        else:
+            shapes = prs.slides[ending_slide+idx].shapes
+            shapes.add_picture(tmpFile, Cm(5.4), Cm(4.95), width=Cm(23))
+    
+    # writes powerpoint with the original powerpoint template file name and includes a tag for looker generated and the target space 
+    base = os.path.basename(powerpoint_template)
+    filename = os.path.splitext(base)[0]
+    
+    prs.save('./' + filename + f'(looker_generated_{target_space}).pptx')
 
-        
+
+def main():
+
+    # shows you as authenticated
+    looker_api_user = sdk.me()
+    print(looker_api_user)
+    
+    try:
+        target_space =  int(sys.argv[1]) if len(sys.argv) >= 1 else None
+        template_slide = int(sys.argv[3]) if len(sys.argv) >= 3 else None
+    except:
+        print(sys.argv[1] + ' and/or ' + sys.argv[3] + ' is not a whole integer. Please enter the target space\'s id and the template slide as whole integers.')
+    
+    powerpoint_template = sys.argv[2] if len(sys.argv) >= 2 else None
+
+    if not target_space or not template_slide or not powerpoint_template:
+        print(f"Please provide: <targetSpace> <pptxTemplate> [<templateSlide>]")
+        pass
+
+    # do we need this call???
+    space = sdk.space(target_space)
+
+    looks = sdk.space_looks(target_space)
+
+    prs = get_pres_temp_layout(powerpoint_template)
+
+    looks_to_pptx(looks, prs, template_slide, powerpoint_template, target_space)
 
 
-#>>> shapes = Presentation(...).slides[0].shapes
-
+main()
